@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Landscape from './Landscape';
 
 type Point = [number, number];
 type Drawing = { clean: Point[]; ridge: Point[]; contours: Point[][]; svg: string };
@@ -36,6 +37,7 @@ const stages = [
 ];
 
 export default function App() {
+  const [view, setView] = useState<'study' | 'landscape'>('study');
   const [seed, setSeed] = useState(1234);
   const [draftSeed, setDraftSeed] = useState('1234');
   const [width, setWidth] = useState(650);
@@ -85,8 +87,13 @@ export default function App() {
   return <main className="studio">
     <header className="masthead">
       <div><span className="eyebrow">MATHEMATICS INTO ART</span><h1>Cosine into contour</h1></div>
+      <nav className="view-switch" aria-label="Views">
+        <button aria-pressed={view === 'study'} onClick={() => setView('study')}>Mountain study</button>
+        <button aria-pressed={view === 'landscape'} onClick={() => setView('landscape')}>Landscape</button>
+      </nav>
       <p>A study of <a href="https://github.com/LingDong-/shan-shui-inf" target="_blank" rel="noreferrer">Lingdong Huang’s <i>Shan, Shui</i> ↗</a></p>
     </header>
+    {view === 'study' ? <>
     <section className="painting" aria-label="Cosine to ink mountain study" aria-busy={busy}>
       <div className="painting-meta"><span>{active.label.toUpperCase()}</span><span>NOISE {visibleAmount}% / 0{stage + 1}</span></div>
       <div className="canvas">
@@ -135,5 +142,6 @@ export default function App() {
         <details><summary>About this study</summary><p>W and H set width and height. N is the original smooth noise function, b is the small vertical offset, and a is the noise amount. All five views share one mountain. They reveal its construction for study, rather than replaying the original program’s execution order. At 100% noise, the finished SVG matches the original generator; lower amounts adapt its terrain profiles.</p><p>Based on the generator © 2018 Lingdong Huang · <a href={`${import.meta.env.BASE_URL}vendor/LICENSE`}>MIT license</a> · <a href={`${import.meta.env.BASE_URL}vendor/NOTICE.md`}>Source & adaptation notes</a></p></details>
       </section>
     </div>
+    </> : <Landscape />}
   </main>;
 }

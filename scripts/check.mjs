@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { original } from './vendor-shan-shui.mjs';
@@ -81,4 +82,223 @@ for (const amount of [0, 50, 100]) {
 console.log('PASS: five-stage study, exact finished SVG, shared ridge/contours, and 0/50/100% noise continuity.');
 console.log('PASS: noise-free cosine and noisy points match the original first profile.');
 console.log('PASS: exact upstream mountain and landscape equivalence, one ridge, seed replay, worker validation, and scroll generation.');
+
+// ---------------------------------------------------------------------------
+// Landscape: viewport tiles, deterministic seeds, shared boundary plans.
+// ---------------------------------------------------------------------------
+const coreCode = readFileSync(new URL('../public/landscape-core.js', import.meta.url), 'utf8');
+const landscapeWorkerCode = readFileSync(new URL('../public/landscape.worker.js', import.meta.url), 'utf8');
+function worldScope(seed = 1234) {
+  const world = context(adapted);
+  vm.runInContext(`${coreCode}\nvar LWORLD = Landscape.createWorld(${seed});`, world);
+  return code => vm.runInContext(code, world, { timeout: 60000 });
+}
+const scope = worldScope();
+const tiles = seed => {
+  const run = worldScope(seed);
+  return index => run(`LWORLD.render(${index})`);
+};
+assert.equal(scope('JSON.stringify(Landscape.visibleChunks(-10, 1400))'), '[-1,0,1,2]');
+assert.equal(scope('JSON.stringify(Landscape.visibleChunks(511, 2))'), '[0,1]');
+assert.equal(scope('JSON.stringify(Landscape.visibleChunks(512, 1))'), '[1]');
+assert.equal(scope('JSON.stringify(Landscape.visibleChunks(0, 512))'), '[0]');
+assert.equal(scope('JSON.stringify(Landscape.visibleChunks(-513, 2))'), '[-2,-1]');
+for (const bad of [
+  'Landscape.visibleChunks(0, 0)', 'Landscape.visibleChunks(0, 16385)',
+  'Landscape.visibleChunks(NaN, 512)', 'Landscape.visibleChunks(2 ** 44, 512)',
+]) assert.throws(() => scope(bad), /supported coordinate range/, bad);
+
+const objectsOf = svg => {
+  const map = new Map();
+  for (const part of svg.split('<g data-object="').slice(1)) map.set(part.slice(0, part.indexOf('"')), part);
+  return map;
+};
+const eastward = tiles(1234);
+const firstTile = eastward(0), secondTile = eastward(1), southernTile = eastward(-5), farTile = eastward(40);
+for (const [name, svg] of [['0', firstTile], ['1', secondTile], ['-5', southernTile], ['40', farTile]]) {
+  assert(svg.length > 0, `tile ${name} must contain artwork`);
+  assert(!/NaN|Infinity/.test(svg), `tile ${name} must have valid coordinates`);
+}
+const westEdge = objectsOf(firstTile), eastEdge = objectsOf(secondTile);
+const crossing = [...eastEdge.keys()].filter(id => westEdge.has(id));
+assert(crossing.length > 0, 'At least one object must cross the 0|1 boundary');
+for (const id of crossing) {
+  assert.equal(westEdge.get(id), eastEdge.get(id), `Object ${id} must be identical in both tiles it crosses`);
+}
+const homeward = tiles(1234);
+const revisited = {};
+for (const index of [40, -5, 1, 0]) revisited[index] = homeward(index);
+assert.deepEqual([firstTile, secondTile, southernTile, farTile],
+  [revisited[0], revisited[1], revisited[-5], revisited[40]],
+  'Tiles must not depend on travel order or direct jumps');
+assert.notEqual(tiles(42)(0), firstTile, 'A different world seed must draw a different country');
+
+// ---------------------------------------------------------------------------
+// Landscape worker: IndexedDB archive, eviction, regeneration, failure surfacing.
+// ---------------------------------------------------------------------------
+function fakeArchive() {
+  const records = new Map();
+  const loose = { hold() {}, release() {}, oncomplete: null, onabort: null, onerror: null, error: null };
+  function transaction() {
+    let pending = 0, completed = false;
+    const tx = {
+      oncomplete: null, onabort: null, onerror: null, error: null,
+      hold() { pending += 1; },
+      release() { pending -= 1; queueMicrotask(check); },
+      objectStore: () => objectStore(tx),
+    };
+    function check() { if (pending === 0 && !completed && tx.oncomplete) { completed = true; tx.oncomplete(); } }
+    return tx;
+  }
+  function cursorRequest(tx) {
+    const request = { onsuccess: null, onerror: null };
+    let position = 0;
+    const ordered = () => [...records.entries()].sort((a, b) =>
+      (a[1].touched - b[1].touched) || String(a[0]).localeCompare(String(b[0])));
+    const step = () => {
+      tx.hold();
+      queueMicrotask(() => {
+        const entry = ordered()[position];
+        let removed = false;
+        const cursor = entry ? {
+          delete() { removed = true; tx.hold(); queueMicrotask(() => { records.delete(entry[0]); tx.release(); }); },
+          continue() { if (!removed) position += 1; step(); },
+        } : null;
+        request.onsuccess?.({ target: { result: cursor } });
+        tx.release();
+      });
+    };
+    queueMicrotask(step);
+    return request;
+  }
+  function objectStore(tx) {
+    function request(op) {
+      const box = { onsuccess: null, onerror: null };
+      tx.hold();
+      queueMicrotask(() => { op(box); tx.release(); });
+      return box;
+    }
+    return {
+      get: key => request(box => { box.result = records.get(key); box.onsuccess?.({ target: box }); }),
+      put: record => request(() => { records.set(record.key, record); }),
+      count: () => request(box => { box.result = records.size; box.onsuccess?.({ target: box }); }),
+      createIndex: () => ({}),
+      index: () => ({ openCursor: () => cursorRequest(tx) }),
+    };
+  }
+  const idb = {
+    open() {
+      const request = { result: null, error: null, onupgradeneeded: null, onsuccess: null, onerror: null, onblocked: null };
+      queueMicrotask(() => {
+        request.result = {
+          close() {},
+          createObjectStore: () => objectStore(loose),
+          transaction: () => transaction(),
+        };
+        request.onupgradeneeded?.({ target: request });
+        request.onsuccess?.({ target: request });
+      });
+      return request;
+    },
+  };
+  return { idb, records };
+}
+
+const overrideWorld = `
+  Landscape = {
+    CHUNK: Landscape.CHUNK, hash: Landscape.hash, visibleChunks: Landscape.visibleChunks,
+    VERSION: 'stub-tiles-v1',
+    createWorld: seed => ({ render: index => '<g data-object="' + index + '">tile ' + index + ' of ' + seed + '</g>' }),
+  };`;
+
+function landscapeHarness({ archive, world: override, big } = {}) {
+  const scope = context('');
+  scope.Blob = Blob;
+  scope.Response = Response;
+  scope.CompressionStream = CompressionStream;
+  scope.DecompressionStream = DecompressionStream;
+  if (big !== undefined) scope.__BIG = big;
+  if (archive) scope.indexedDB = archive.idb;
+  scope.importScripts = () => {
+    vm.runInContext(adapted, scope);
+    vm.runInContext(coreCode, scope);
+    if (override) vm.runInContext(override, scope);
+  };
+  const inbox = [];
+  scope.postMessage = data => inbox.push(data);
+  vm.runInContext(landscapeWorkerCode, scope);
+  return async data => { inbox.length = 0; await scope.onmessage({ data }); return inbox.slice(); };
+}
+
+const archive = fakeArchive();
+const stubSend = landscapeHarness({ archive, world: overrideWorld });
+const firstBatch = await stubSend({ seed: 7, x: 0, width: 1400, indices: [0, 1, 2] });
+assert.equal(firstBatch.filter(message => message.type === 'chunk').length, 3);
+assert(firstBatch.every(message => message.type === 'chunk' ? message.source === 'generated' && message.saved : true),
+  'Fresh tiles are generated and archived');
+const restored = await landscapeHarness({ archive, world: overrideWorld })({ seed: 7, x: 0, width: 1400, indices: [0, 1, 2] });
+for (const message of restored) if (message.type === 'chunk') {
+  assert.equal(message.source, 'archive', 'Archived tiles are read back');
+  assert.equal(message.svg, firstBatch.find(item => item.index === message.index).svg, 'Restored tiles are byte-identical');
+}
+const reseeded = await stubSend({ seed: 8, x: 0, width: 512, indices: [0] });
+assert.equal(reseeded[0].source, 'generated', 'A new world seed starts a new archive namespace');
+
+// A fresh archive proves the 64-entry bound and identical regeneration.
+const eviction = fakeArchive();
+const evictSend = landscapeHarness({ archive: eviction, world: overrideWorld });
+const oldest = await evictSend({ seed: 7, x: 0, width: 512, indices: [0] });
+assert.equal(oldest[0].source, 'generated');
+for (let index = 1; index <= 64; index++) {
+  const reply = await evictSend({ seed: 7, x: index * 512, width: 512, indices: [index] });
+  assert.equal(reply[0].type, 'chunk');
+}
+assert.equal(eviction.records.size, 64, `Archive must stay bounded at 64, found ${eviction.records.size}`);
+assert(!eviction.records.has('stub-tiles-v1:7:0'), 'The least recently used tile must be evicted first');
+const regenerated = await evictSend({ seed: 7, x: 0, width: 512, indices: [0] });
+assert.equal(regenerated[0].source, 'generated', 'Evicted tiles regenerate from seed and coordinates');
+assert.equal(regenerated[0].svg, oldest[0].svg, 'Regenerated tiles are identical to the evicted original');
+
+// A chunk that cannot fit the per-entry limit is not archived, and says so.
+const oversizedArchive = fakeArchive();
+const oversizedSend = landscapeHarness({
+  archive: oversizedArchive,
+  world: `
+    Landscape = {
+      CHUNK: Landscape.CHUNK, hash: Landscape.hash, visibleChunks: Landscape.visibleChunks,
+      VERSION: 'stub-tiles-v1',
+      createWorld: seed => ({
+        render: index => (index === 99 ? globalThis.__BIG : '<g data-object="' + index + '">tile ' + index + '</g>'),
+      }),
+    };`,
+  big: randomBytes(3 * 1024 * 1024).toString('base64'),
+});
+const oversizedReply = await oversizedSend({ seed: 7, x: 99 * 512, width: 512, indices: [99] });
+assert.equal(oversizedReply[0].type, 'chunk');
+assert.equal(oversizedReply[0].saved, false, 'A chunk over the limit is not archived');
+assert.equal(oversizedArchive.records.size, 0, 'Nothing is written when the limit is exceeded');
+assert.match(oversizedReply[0].warning ?? '', /could not be saved/, 'Archive failures are surfaced');
+
+const offline = await landscapeHarness({ world: overrideWorld })({ seed: 7, x: 0, width: 512, indices: [0] });
+assert.equal(offline[0].type, 'chunk');
+assert.match(offline[0].warning, /archive unavailable/, 'A missing archive is surfaced without failing');
+const rejected = await stubSend({ seed: 7, x: 0, width: 512, indices: [0, 9] });
+assert.equal(rejected[0].type, 'error');
+assert.match(rejected[0].error, /intersecting the canvas/);
+const badSeed = await landscapeHarness()({ seed: 0, x: 0, width: 512, indices: [0] });
+assert.equal(badSeed[0].type, 'error');
+assert.match(badSeed[0].error, /seed from 1 to 999999/);
+
+// One real payload travels the whole archive round trip, compressed.
+const realArchive = fakeArchive();
+const generated = await landscapeHarness({ archive: realArchive })({ seed: 1234, x: 0, width: 512, indices: [0] });
+assert.equal(generated[0].type, 'chunk');
+assert.equal(generated[0].svg, firstTile, 'The worker must return the core tile unchanged');
+assert(realArchive.records.size === 1, 'The real tile must fit the archive limit');
+const fetched = await landscapeHarness({ archive: realArchive })({ seed: 1234, x: 0, width: 512, indices: [0] });
+assert.equal(fetched[0].source, 'archive');
+assert.equal(fetched[0].svg, firstTile, 'The archived tile must decompress back to the original');
+
+console.log('PASS: visible-tile selection, invalid viewports, boundary plans, seam identity, negative tiles, travel order, and direct jumps.');
+console.log('PASS: archive round trip, bounded 64-entry store, identical regeneration after eviction, and surfaced archive failures.');
 

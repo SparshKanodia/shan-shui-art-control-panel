@@ -6,7 +6,7 @@ function offlineShell(): Plugin {
     name: 'offline-shell',
     generateBundle(_options, bundle) {
       const files = Object.keys(bundle).sort();
-      const publicFiles = ['generator.worker.js', 'vendor/shan-shui.js', 'vendor/LICENSE', 'vendor/NOTICE.md', 'vendor/p5-LICENSE.txt'];
+      const publicFiles = ['generator.worker.js', 'landscape.worker.js', 'landscape-core.js', 'vendor/shan-shui.js', 'vendor/LICENSE', 'vendor/NOTICE.md', 'vendor/p5-LICENSE.txt'];
       const assets = [...files, ...publicFiles].map((file) => `/${file}`);
       const cacheVersion = Date.now().toString(36);
       const source = `

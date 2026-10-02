@@ -11,4 +11,14 @@ The active sequence now keeps the cosine and noise steps and continues through t
 - [x] Verify exact original SVG at 100% noise and every contour at 0/50/100% noise.
 - [x] Verify stage visibility, pause/resume, autoplay completion, and mobile widths in the browser.
 
+# Landscape checkpoint
+
+- [x] Add a separate Landscape view with a canvas-sized camera and horizontal navigation (drag, wheel, arrows, slider).
+- [x] Generate only the 512-unit chunks intersecting the viewport, after navigation settles; prune everything else from live memory.
+- [x] Derive world/cell/object seeds from coordinates and share chunk-boundary plans so seams are byte-identical.
+- [x] Archive every completed chunk in IndexedDB, bounded to 64 compressed entries of 2 MiB, and restore revisits from it.
+- [x] Regenerate evicted, oversized, or missing chunks deterministically from seed and coordinates; surface archive failures.
+- [x] Cancel stale work on navigation, seed changes, hidden tabs, and leaving the view; terminate the worker on unmount.
+- [x] Verify seam continuity, negative coordinates, direct jumps, archival restoration, bounded resident memory, idle behaviour, and the existing five-stage study.
+
 The stages are educational views of one generated mountain, not a replay of upstream execution order. The original source, licenses, and pre-rebuild backup remain intact. Validation uses npm test, npm run build, and .backup/steps-check.cjs; captures are under .backup/checks/. No deployment was performed.
