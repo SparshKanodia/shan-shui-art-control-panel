@@ -1,7 +1,5 @@
 self.window = self;
 importScripts('./vendor/shan-shui.js', './landscape-core.js');
-// Upstream logs a line per seed and per planner step; a landscape visit would flood the console.
-console.log = () => {};
 
 // Cache limits apply across all seeds: at most 64 * 2 MiB of archived payloads.
 const ARCHIVE_LIMIT = 64, MAX_PAYLOAD = 2 * 1024 * 1024;

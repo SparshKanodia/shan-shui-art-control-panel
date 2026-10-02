@@ -18,7 +18,7 @@ const stages = [
   },
   {
     title: 'Let details grow from the terrain.', label: 'Add details',
-    text: 'Trees grow from points on the mountain, following noise, elevation, and clustering rules. Rocks anchor its edges. Where the terrain allows, the original generator adds small buildings.',
+    text: 'Trees grow from points on the mountain, following noise, elevation, and clustering rules. Rocks anchor its edges wherever the terrain allows.',
     formula: 'growth = noise threshold\n       + elevation rule\n       + neighbourhood rule',
     note: 'The ridge and its details share the same geometry and seed. Changing the noise reshapes the terrain that the trees and rocks grow from.',
   },
@@ -32,7 +32,7 @@ const stages = [
     title: 'Turn the profiles into ink.', label: 'Ink & shading',
     text: 'Short, irregular strokes follow and interpolate between the internal profiles. Tapered brush shapes, translucent greys, and strokes around the mountain’s feet turn the geometry into a finished ink mountain.',
     formula: 'texture = short paths between profiles\nbrush width ∝ sin(πt) × local variation\nink = overlapping translucent strokes',
-    note: 'At 100% noise, this is the original generator’s mountain, with the same marks and drawing order. The teaching guides and the earlier plain curve are no longer drawn over it.',
+    note: 'At 100% noise the mountain carries the original generator’s brush marks and drawing order. The teaching guides and the earlier plain curve are no longer drawn over it.',
   },
 ];
 
@@ -139,7 +139,7 @@ export default function App() {
       <section className="explanation" aria-labelledby="explanation-title">
         <div className="section-heading"><h2 id="explanation-title">Explanation panel</h2><span>02 — UNDERSTAND</span></div>
         <div aria-live="polite"><h3>{active.title}</h3><p>{active.text}</p><pre aria-label="Governing rule">{active.formula}</pre><p className="note">{active.note}</p></div>
-        <details><summary>About this study</summary><p>W and H set width and height. N is the original smooth noise function, b is the small vertical offset, and a is the noise amount. All five views share one mountain. They reveal its construction for study, rather than replaying the original program’s execution order. At 100% noise, the finished SVG matches the original generator; lower amounts adapt its terrain profiles.</p><p>Based on the generator © 2018 Lingdong Huang · <a href={`${import.meta.env.BASE_URL}vendor/LICENSE`}>MIT license</a> · <a href={`${import.meta.env.BASE_URL}vendor/NOTICE.md`}>Source & adaptation notes</a></p></details>
+        <details><summary>About this study</summary><p>W and H set width and height. N is the original smooth noise function, b is the small vertical offset, and a is the noise amount. All five views share one mountain. They reveal its construction for study, rather than replaying the original program’s execution order. At 100% noise the ridge and the brushwork come straight from the original generator; lower amounts adapt its terrain profiles. Only natural scenery is drawn here: mountains, trees, rocks, rivers and boats — the transmission towers, pavilions and huts upstream plants on the terrain are left out of this build.</p><p>Based on the generator © 2018 Lingdong Huang · <a href={`${import.meta.env.BASE_URL}vendor/LICENSE`}>MIT license</a> · <a href={`${import.meta.env.BASE_URL}vendor/NOTICE.md`}>Source & adaptation notes</a></p></details>
       </section>
     </div>
     </> : <Landscape />}

@@ -73,7 +73,6 @@ self.onmessage = ({ data }) => {
       mountainSvg ||= originalMountain(500, 520, 0, { wid: width, hei: height, tex: texture });
       svg = mountainSvg;
     } else {
-      // ponytail: retain upstream chunks; add eviction/replay if long sessions exhaust memory.
       chunkloader(x, x + 1400);
       chunkrender(x, x + 1400);
       svg = MEM.canv;
